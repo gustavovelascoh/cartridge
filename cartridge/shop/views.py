@@ -23,6 +23,7 @@ try:
     from xhtml2pdf import pisa
 except (ImportError, SyntaxError):
     pisa = None
+HAS_PDF = pisa is not None
 
 from cartridge.shop import checkout
 from cartridge.shop.forms import (AddProductForm, CartItemFormSet,
@@ -134,7 +135,7 @@ def wishlist(request, template="shop/wishlist.html",
     # Remove skus from the cookie that no longer exist.
     published_products = Product.objects.published(for_user=request.user)
     f = {"product__in": published_products, "sku__in": skus}
-    wishlist = ProductVariation.objects.filter(**f).select_related(depth=1)
+    wishlist = ProductVariation.objects.filter(**f).select_related("product")
     wishlist = sorted(wishlist, key=lambda v: skus.index(v.sku))
     context = {"wishlist_items": wishlist, "error": error}
     response = render(request, template, context)
@@ -194,7 +195,7 @@ def cart(request, template="shop/cart.html",
     context = {"cart_formset": cart_formset}
     settings.use_editable()
     if (settings.SHOP_DISCOUNT_FIELD_IN_CART and
-        DiscountCode.objects.active().exists()):
+            DiscountCode.objects.active().exists()):
         context["discount_form"] = discount_form
     return render(request, template, context)
 
@@ -345,11 +346,11 @@ def complete(request, template="shop/complete.html"):
     skus = [item.sku for item in items]
     variations = ProductVariation.objects.filter(sku__in=skus)
     names = {}
-    for variation in variations.select_related(depth=1):
+    for variation in variations.select_related("product"):
         names[variation.sku] = variation.product.title
     for i, item in enumerate(items):
         setattr(items[i], "name", names[item.sku])
-    context = {"order": order, "items": items, "has_pdf": pisa is not None,
+    context = {"order": order, "items": items, "has_pdf": HAS_PDF,
                "steps": checkout.CHECKOUT_STEPS}
     return render(request, template, context)
 
@@ -369,7 +370,7 @@ def invoice(request, order_id, template="shop/order_invoice.html",
     context.update(order.details_as_dict())
     context = RequestContext(request, context)
     if request.GET.get("format") == "pdf":
-        response = HttpResponse(mimetype="application/pdf")
+        response = HttpResponse(content_type="application/pdf")
         name = slugify("%s-invoice-%s" % (settings.SITE_TITLE, order.id))
         response["Content-Disposition"] = "attachment; filename=%s.pdf" % name
         html = get_template(template_pdf).render(context)
@@ -390,7 +391,7 @@ def order_history(request, template="shop/order_history.html"):
                       request.GET.get("page", 1),
                       settings.SHOP_PER_PAGE_CATEGORY,
                       settings.MAX_PAGING_LINKS)
-    context = {"orders": orders}
+    context = {"orders": orders, "has_pdf": HAS_PDF}
     return render(request, template, context)
 
 
